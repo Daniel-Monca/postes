@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Gestor de Postes | GIS para FTTH</title>
+    <!-- Leaflet CSS/JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- SheetJS (XLSX) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <!-- JSZip para KMZ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Turf.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <!-- localforage -->
+    <script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body {
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            background: #1a1a2e;
+        }
+
+        /* Layout principal */
+        .app-container {
+            display: flex;
+            height: 100%;
+            width: 100%;
+            position: relative;
+        }
+
+        /* Panel izquierdo colapsable */
+        .left-panel {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 320px;
+            background: #1e2a3e;
+            color: #e2e8f0;
+            z-index: 100;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.3);
+        }
+
+        .left-panel.open {
+            transform: translateX(0);
+        }
+
+        /* Panel derecho colapsable */
+        .right-panel {
+            position: absolute;
+            right: 0;
+            top: 0;
+            height: 100%;
+            width: 380px;
+            background: white;
+            z-index: 100;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -2px 0 12px rgba(0,0,0,0.15);
+            overflow-y: auto;
+        }
+
+        .right-panel.open {
+            transform: translateX(0);
+        }
+
+        /* PESTAÑAS VISIBLES EN LOS BORDES - CON Z-INDEX MUY ALTO */
+        .tab-left {
+            position: fixed;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #1e2a3e;
+            color: #facc15;
+            border: none;
+            width: 45px;
+            height: 120px;
+            border-radius: 0 15px 15px 0;
+            font-size: 1rem;
+            cursor: pointer;
+            z-index: 1000 !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            box-shadow: 3px 0 12px rgba(0,0,0,0.3);
+            transition: all 0.2s;
+            gap: 5px;
+            font-weight: bold;
+            backdrop-filter: blur(5px);
+        }
+
+        .tab-left:hover {
+            background: #facc15;
+            color: #1e2a3e;
+            width: 55px;
+        }
+
+        .tab-right {
+            position: fixed;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            background: white;
+            color: #1e2a3e;
+            border: none;
+            width: 45px;
+            height: 120px;
+            border-radius: 15px 0 0 15px;
+            font-size: 1rem;
+            cursor: pointer;
+            z-index: 1000 !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            box-shadow: -3px 0 12px rgba(0,0,0,0.15);
+            transition: all 0.2s;
+            gap: 5px;
+            font-weight: bold;
+            backdrop-filter: blur(5px);
+        }
+
+        .tab-right:hover {
+            background: #facc15;
+            color: #1e2a3e;
+            width: 55px;
+        }
+
+        /* Header del panel */
+        .panel-header {
+            padding: 1.2rem;
+            background: #0f172a;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #facc15;
+        }
+
+        .close-panel {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 1.3rem;
+            cursor: pointer;
+        }
+
+        .close-panel:hover {
+            color: white;
+        }
+
+        /* Contenido del panel izquierdo */
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .offline-indicator {
+            background: #10b981;
+            color: white;
+            padding: 8px;
+            text-align: center;
+            font-size: 0.7rem;
+            font-weight: bold;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .offline-indicator.offline {
+            background: #dc2626;
+        }
+
+        .project-section h3 {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            color: #cbd5e1;
+        }
+
+        .project-list {
+            max-height: 250px;
+            overflow-y: auto;
+            margin-bottom: 12px;
+        }
+
+        .project-item {
+            background: #0f172a;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .project-item.active {
+            background: #facc15;
+            color: #0f172a;
+            font-weight: bold;
+        }
+
+        .project-item:hover:not(.active) {
+            background: #334155;
+        }
+
+        .project-name {
+            flex: 1;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .project-actions button {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 0.9rem;
+            margin-left: 6px;
+        }
+
+        .project-actions button:hover {
+            color: white;
+        }
+
+        .btn-primary, .btn-success, .btn-warning, .btn-secondary {
+            border: none;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            width: 100%;
+            margin-top: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 0.85rem;
+        }
+
+        .btn-primary {
+            background: #facc15;
+            color: #0f172a;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-warning {
+            background: #2c3e66;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #64748b;
+            color: white;
+        }
+
+        .separator {
+            height: 1px;
+            background: #334155;
+            margin: 1rem 0;
+        }
+
+        /* Panel derecho - detalles del poste */
+        .right-panel-content {
+            padding: 1rem;
+        }
+
+        .pole-detail {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 1rem;
+            font-size: 0.75rem;
+        }
+
+        .pole-detail p {
+            margin: 6px 0;
+            line-height: 1.4;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #64748b;
+            padding: 2rem;
+            font-size: 0.85rem;
+        }
+
+        /* Mapa - z-index bajo para que las pestañas estén encima */
+        .map-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        /* Modales */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 24px;
+            max-width: 750px;
+            width: 90%;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 1.5rem;
+            z-index: 2001;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            display: block;
+            margin-bottom: 4px;
+            font-size: 0.75rem;
+            color: #1e2a3e;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
+            font-size: 0.8rem;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 40px;
+            z-index: 3000;
+            animation: fadeIn 0.3s;
+            font-size: 0.85rem;
+            white-space: nowrap;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(-50%) translateY(20px);}
+            to { opacity: 1; transform: translateX(-50%) translateY(0);}
+        }
+
+        .coords-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 8px;
+            font-size: 11px;
+            z-index: 50;
+            font-family: monospace;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #10b981;
+            transition: width 0.3s;
+            width: 0%;
+        }
+
+        .drawing-active {
+            cursor: crosshair !important;
+        }
+    </style>
+</head>
+<body>
+<div class="app-container">
+    <!-- Mapa (fondo) -->
+    <div class="map-container">
+        <div id="map"></div>
+        <div id="coordInfo" class="coords-info">📌 Lat: --, Lng: --</div>
+    </div>
+
+    <!-- PESTAÑA VISIBLE IZQUIERDA (siempre encima) -->
+    <button class="tab-left" id="tabLeftBtn">
+        📋<br>MENÚ
+    </button>
+
+    <!-- PESTAÑA VISIBLE DERECHA (siempre encima) -->
+    <button class="tab-right" id="tabRightBtn">
+        📌<br>POSTE
+    </button>
+
+    <!-- Panel Izquierdo - Proyectos y Exportaciones -->
+    <div class="left-panel" id="leftPanel">
+        <div class="panel-header">
+            <h2>📁 GESTOR DE POSTES</h2>
+            <button class="close-panel" id="closeLeftPanel">✕</button>
+        </div>
+        <div class="panel-content">
+            <div class="offline-indicator" id="offlineIndicator">🟢 Online</div>
+            
+            <div class="project-section">
+                <h3>📋 PROYECTOS</h3>
+                <div id="projectListContainer" class="project-list"></div>
+                <button id="newProjectBtn" class="btn-primary">➕ Nuevo Proyecto</button>
+            </div>
+            
+            <div class="separator"></div>
+            
+            <button id="selectAreaBtn" class="btn-success">🗺️ Área Offline</button>
+            <button id="clearAreaBtn" class="btn-secondary" style="margin-top:5px;">🗑️ Limpiar Caché</button>
+            
+            <div class="separator"></div>
+            
+            <button id="exportExcelBtn" class="btn-warning">📊 Exportar Excel</button>
+            <button id="exportKmzBtn" class="btn-warning" style="margin-top:5px;">🗺️ Exportar KMZ</button>
+            <button id="newPoleGlobalBtn" class="btn-primary" style="margin-top:5px;">📍 Nuevo Poste</button>
+            <button id="myLocationBtn" class="btn-secondary" style="margin-top:5px;">🎯 Mi Ubicación</button>
+            
+            <div class="separator"></div>
+            
+            <div style="font-size: 0.7rem; color: #94a3b8; text-align: center;">
+                ✅ Datos locales<br>
+                ✅ Modo offline<br>
+                ✅ Cálculo automático de vanos
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel Derecho - Detalles del Poste -->
+    <div class="right-panel" id="rightPanel">
+        <div class="panel-header">
+            <h2>📌 DETALLES DEL POSTE</h2>
+            <button class="close-panel" id="closeRightPanel">✕</button>
+        </div>
+        <div class="right-panel-content">
+            <div id="poleDetailsPanel" class="empty-state">Selecciona un poste en el mapa</div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para selección de área -->
+<div id="areaModal" class="modal">
+    <div class="modal-content">
+        <h2 style="margin-bottom: 1rem;">🗺️ Área Offline</h2>
+        <p>Dibuja un rectángulo en el mapa para descargar los tiles.</p>
+        <div class="form-group">
+            <label>Zoom mínimo:</label>
+            <input type="number" id="minZoom" value="12" min="8" max="18" />
+        </div>
+        <div class="form-group">
+            <label>Zoom máximo:</label>
+            <input type="number" id="maxZoom" value="16" min="8" max="18" />
+        </div>
+        <div id="progressContainer" style="display:none;">
+            <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+            <p id="progressText" style="font-size:12px;">Descargando...</p>
+        </div>
+        <div class="form-row">
+            <button id="startAreaSelection" class="btn-primary">🔲 Dibujar</button>
+            <button id="closeAreaModal" class="btn-secondary">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Formulario Poste -->
+<div id="poleModal" class="modal">
+    <div class="modal-content">
+        <h2 id="modalTitle" style="margin-bottom:1rem;">Nuevo Poste</h2>
+        <form id="poleForm">
+            <input type="hidden" id="poleId" />
+            <div class="form-row">
+                <div class="form-group"><label>NÚMERO DE APOYO *</label><input type="text" id="numeroApoyo" required /></div>
+                <div class="form-group"><label>CÓDIGO DEL APOYO *</label><input type="text" id="codigoApoyo" required /></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>CONDICIÓN</label><select id="condicion"><option value="E">E-ENCONTRADO</option><option value="I">I-INSTALADO</option><option value="R">R-RETIRADO</option><option value="C">C-CAMBIO</option></select></div>
+                <div class="form-group"><label>Material</label><select id="material"><option value="CO">CO-CONCRETO</option><option value="MA">MA-MADERA</option><option value="TO">TO-TORRE</option><option value="TU">TU-TUBO</option></select></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Longitud (m)</label><input type="number" id="longitudPoste" required /></div>
+                <div class="form-group"><label>Resistencia (Kg)</label><input type="number" id="resistenciaMecanica" required /></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Estado</label><select id="estadoPoste"><option value="B">B-BUENO</option><option value="M">M-MALO</option></select></div>
+                <div class="form-group"><label>Retenidas</label><input type="text" id="retenidas" /></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Propiedad</label><select id="propiedad"><option value="EH">EH-Electrohuila</option><option value="GO">GO-Gobernación</option><option value="MC">MC-Municipio</option><option value="P">P-Particular</option></select></div>
+                <div class="form-group"><label>Nivel Tensión</label><input type="text" id="nivelTension" /></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Altura Disponible</label><input type="number" id="alturaDisponible" /></div>
+                <div class="form-group"><label>Altura Montaje</label><input type="number" id="alturaMontaje" /></div>
+            </div>
+            <div class="form-group"><label>T/R/S</label><select id="trs"><option value="T">T-Terminal</option><option value="R">R-Retención</option><option value="S">S-Suspensión</option></select></div>
+            <div class="form-row">
+                <div class="form-group"><label>Cable sobre BT</label><select id="cableSobreBT"><option value="SI">SI</option><option value="NO">NO</option></select></div>
+                <div class="form-group"><label>Requiere retenidas</label><select id="requiereRetenidas"><option value="SI">SI</option><option value="NO">NO</option></select></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Cables operador</label><select id="cablesOperador"><option value="E">E-Existente</option><option value="P">P-Proyectado</option></select></div>
+                <div class="form-group"><label>Total cables</label><input type="number" id="totalCablesComunicacion" /></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Tipo cable EH</label><select id="tipoCableRedEH"><option value="ACSR">ACSR</option><option value="ASC">ASC</option><option value="TRE">TRE</option><option value="CUA">CUA</option><option value="CUD">CUD</option></select></div>
+                <div class="form-group"><label>Tipo cable Com</label><select id="tipoCableComunicacion"><option value="RG6">RG6</option><option value="RG11">RG11</option><option value=".500">.500</option><option value="FO">FO</option></select></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Condición cable</label><select id="condicionCable"><option value="E">E-ENCONTRADO</option><option value="I">I-INSTALADO</option><option value="R">R-RETIRADO</option><option value="C">C-CAMBIO</option></select></div>
+                <div class="form-group"><label>Amplificador</label><input type="number" id="amplificador" /></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Fuente</label><input type="number" id="fuente" /></div>
+                <div class="form-group"><label>Distribuidor Fibra</label><input type="number" id="distribuidorFibra" /></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Consume energía EH</label><select id="consumeEnergiaEH"><option value="SI">SI</option><option value="NO">NO</option></select></div>
+                <div class="form-group"><label>Otros</label><input type="text" id="otros" /></div>
+            </div>
+            <div class="form-group"><label>Código/Placa equipo</label><input type="text" id="codigoPlacaEquipo" /></div>
+            <div class="form-group"><label>Dirección/Observaciones</label><textarea id="direccionObservaciones" rows="2"></textarea></div>
+            <input type="hidden" id="lat" /><input type="hidden" id="lng" />
+            <div class="form-row">
+                <button type="submit" class="btn-primary">💾 Guardar</button>
+                <button type="button" id="closeModalBtn" class="btn-secondary">❌ Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // ==================== APLICACIÓN COMPLETA ====================
+    (function(){
+        let currentProject = null;
+        let projects = [];
+        let map;
+        let markersLayer;
+        let selectedMarkerId = null;
+        let currentLatLngForNew = null;
+        let currentRectangle = null;
+        let isDrawingMode = false;
+        let startPoint = null;
+        let rectangleDrawing = null;
+        let isOnline = navigator.onLine;
+        
+        // Toggle panels con pestañas visibles
+        const leftPanel = document.getElementById('leftPanel');
+        const rightPanel = document.getElementById('rightPanel');
+        const tabLeftBtn = document.getElementById('tabLeftBtn');
+        const tabRightBtn = document.getElementById('tabRightBtn');
+        
+        // Abrir/cerrar con las pestañas laterales
+        tabLeftBtn.onclick = () => leftPanel.classList.toggle('open');
+        tabRightBtn.onclick = () => rightPanel.classList.toggle('open');
+        
+        // Botones de cierre dentro de los paneles
+        document.getElementById('closeLeftPanel').onclick = () => leftPanel.classList.remove('open');
+        document.getElementById('closeRightPanel').onclick = () => rightPanel.classList.remove('open');
+        
+        // Configuración de almacenamiento offline
+        localforage.config({
+            name: 'FTTH_OfflineTiles',
+            storeName: 'tiles_cache'
+        });
+        
+        const cachedTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: 'OpenStreetMap',
+            subdomains: 'abcd',
+            maxZoom: 19
+        });
+        
+        const cachedSatellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Esri'
+        });
+        
+        function updateOnlineStatus() {
+            isOnline = navigator.onLine;
+            const indicator = document.getElementById('offlineIndicator');
+            if (isOnline) {
+                indicator.className = 'offline-indicator';
+                indicator.innerHTML = '🟢 Online';
+            } else {
+                indicator.className = 'offline-indicator offline';
+                indicator.innerHTML = '🔴 Offline - Usando caché';
+                showNotification('Modo offline activado');
+            }
+        }
+        
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+        
+        // IndexedDB
+        const DB_NAME = "PostesDB_V3";
+        const STORE_NAME = "projects";
+        let db;
+        
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => { db = request.result; resolve(db); };
+                request.onupgradeneeded = (e) => {
+                    const dbUp = e.target.result;
+                    if (!dbUp.objectStoreNames.contains(STORE_NAME)) {
+                        dbUp.createObjectStore(STORE_NAME, { keyPath: "id" });
+                    }
+                };
+            });
+        }
+        
+        async function saveProjectsToDB() {
+            if (!db || !projects) return;
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, "readwrite");
+                const store = tx.objectStore(STORE_NAME);
+                const clearRequest = store.clear();
+                clearRequest.onsuccess = () => {
+                    let completed = 0;
+                    if (projects.length === 0) { resolve(); return; }
+                    projects.forEach(project => {
+                        store.put(project);
+                        completed++;
+                        if (completed === projects.length) resolve();
+                    });
+                };
+                clearRequest.onerror = (err) => reject(err);
+            });
+        }
+        
+        async function loadProjectsFromDB() {
+            if (!db) return [];
+            return new Promise((resolve) => {
+                const tx = db.transaction(STORE_NAME, "readonly");
+                const store = tx.objectStore(STORE_NAME);
+                const all = store.getAll();
+                all.onsuccess = () => resolve(all.result || []);
+                all.onerror = () => resolve([]);
+            });
+        }
+        
+        function showNotification(msg, isError = false) {
+            const notif = document.createElement('div');
+            notif.className = 'notification';
+            notif.style.background = isError ? '#dc2626' : '#1e293b';
+            notif.innerHTML = isError ? `⚠️ ${msg}` : `✅ ${msg}`;
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 2500);
+        }
+        
+        function computeDistance(lat1, lng1, lat2, lng2) {
+            if(!lat1 || !lat2) return null;
+            const from = turf.point([lng1, lat1]);
+            const to = turf.point([lng2, lat2]);
+            return parseFloat(turf.distance(from, to, { units: 'meters' }).toFixed(2));
+        }
+        
+        function recalculateVanos(project) {
+            if(!project || !project.poles || !project.poles.length) return;
+            const poles = project.poles.sort((a,b) => a.order - b.order);
+            for(let i=0; i<poles.length; i++) {
+                if(i === 0) {
+                    poles[i].vano = null;
+                    poles[i].longitudVano = null;
+                } else {
+                    const prev = poles[i-1];
+                    const curr = poles[i];
+                    const dist = computeDistance(prev.lat, prev.lng, curr.lat, curr.lng);
+                    poles[i].vano = `${prev.numeroApoyo} - ${curr.numeroApoyo}`;
+                    poles[i].longitudVano = dist ? dist : 0;
+                }
+            }
+        }
+        
+        function renumberOrder(project) {
+            if(!project || !project.poles) return;
+            project.poles.sort((a,b) => a.order - b.order);
+            for(let i=0; i<project.poles.length; i++) {
+                project.poles[i].order = i+1;
+            }
+            recalculateVanos(project);
+        }
+        
+        function renderMarkers() {
+            if(!map || !markersLayer || !currentProject) return;
+            markersLayer.clearLayers();
+            if(!currentProject.poles) currentProject.poles = [];
+            
+            currentProject.poles.forEach(pole => {
+                const marker = L.marker([pole.lat, pole.lng], { draggable: true, title: pole.codigoApoyo });
+                marker.bindTooltip(`<b>${pole.codigoApoyo}</b>`, { permanent: false, direction: 'top' });
+                marker.on('click', () => { 
+                    selectPole(pole.id); 
+                    rightPanel.classList.add('open'); 
+                });
+                marker.on('dragend', async (e) => {
+                    const newPos = e.target.getLatLng();
+                    pole.lat = newPos.lat;
+                    pole.lng = newPos.lng;
+                    recalculateVanos(currentProject);
+                    await saveProjectsToDB();
+                    renderMarkers();
+                    if(selectedMarkerId === pole.id) selectPole(pole.id);
+                    showNotification(`Poste ${pole.codigoApoyo} movido`);
+                });
+                marker.addTo(markersLayer);
+            });
+        }
+        
+        function selectPole(poleId) {
+            if(!currentProject) return;
+            const pole = currentProject.poles.find(p => p.id === poleId);
+            if(!pole) return;
+            selectedMarkerId = poleId;
+            const panel = document.getElementById('poleDetailsPanel');
+            panel.innerHTML = `
+                <div class="pole-detail">
+                    <h4>📌 ${pole.codigoApoyo}</h4>
+                    <p><strong>Número:</strong> ${pole.numeroApoyo}</p>
+                    <p><strong>Coordenadas:</strong><br>${pole.lat.toFixed(6)}, ${pole.lng.toFixed(6)}</p>
+                    <p><strong>Condición:</strong> ${pole.condicion} | <strong>Material:</strong> ${pole.material}</p>
+                    <p><strong>Longitud:</strong> ${pole.longitudPoste}m | <strong>Resistencia:</strong> ${pole.resistenciaMecanica}Kg</p>
+                    <p><strong>Estado:</strong> ${pole.estadoPoste} | <strong>Retenidas:</strong> ${pole.retenidas}</p>
+                    <p><strong>Propiedad:</strong> ${pole.propiedad} | <strong>Tensión:</strong> ${pole.nivelTension}</p>
+                    <p><strong>Vano:</strong> ${pole.vano || '—'} (${pole.longitudVano || 0}m)</p>
+                    <p><strong>Dirección:</strong> ${pole.direccionObservaciones.substring(0, 100)}</p>
+                    <div style="margin-top: 12px; display: flex; gap: 8px;">
+                        <button id="editPoleBtn" style="flex:1; background:#3b82f6; color:white; border:none; padding:8px; border-radius:8px; cursor:pointer;">✏️ Editar</button>
+                        <button id="deletePoleBtn" style="flex:1; background:#ef4444; color:white; border:none; padding:8px; border-radius:8px; cursor:pointer;">🗑️ Eliminar</button>
+                    </div>
+                </div>
+            `;
+            document.getElementById('editPoleBtn')?.addEventListener('click', () => openPoleModal(pole));
+            document.getElementById('deletePoleBtn')?.addEventListener('click', async () => {
+                if(confirm(`¿Eliminar ${pole.codigoApoyo}?`)){
+                    currentProject.poles = currentProject.poles.filter(p => p.id !== pole.id);
+                    renumberOrder(currentProject);
+                    await saveProjectsToDB();
+                    renderMarkers();
+                    document.getElementById('poleDetailsPanel').innerHTML = '<div class="empty-state">Poste eliminado</div>';
+                    selectedMarkerId = null;
+                    showNotification(`Poste eliminado`);
+                }
+            });
+        }
+        
+        async function downloadTilesInArea(bounds, minZoom, maxZoom, onProgress) {
+            const tilesToDownload = [];
+            for (let z = minZoom; z <= maxZoom; z++) {
+                const northWest = map.project(bounds.getNorthWest(), z);
+                const southEast = map.project(bounds.getSouthEast(), z);
+                const minX = Math.floor(northWest.x / 256);
+                const maxX = Math.floor(southEast.x / 256);
+                const minY = Math.floor(southEast.y / 256);
+                const maxY = Math.floor(northWest.y / 256);
+                for (let x = minX; x <= maxX; x++) {
+                    for (let y = minY; y <= maxY; y++) {
+                        if (y >= 0 && y < Math.pow(2, z)) tilesToDownload.push({ z, x, y });
+                    }
+                }
+            }
+            let downloaded = 0;
+            const total = tilesToDownload.length;
+            for (const tile of tilesToDownload) {
+                const url = `https://a.basemaps.cartocdn.com/light_all/${tile.z}/${tile.x}/${tile.y}.png`;
+                const key = `tile_${url}`;
+                try {
+                    const cached = await localforage.getItem(key);
+                    if (!cached) {
+                        const response = await fetch(url);
+                        const blob = await response.blob();
+                        await localforage.setItem(key, blob);
+                    }
+                    downloaded++;
+                    if (onProgress) onProgress((downloaded / total) * 100, downloaded, total);
+                } catch (error) {}
+            }
+            return total;
+        }
+        
+        function startDrawingMode() {
+            if (isDrawingMode) return;
+            isDrawingMode = true;
+            startPoint = null;
+            document.getElementById('map').style.cursor = 'crosshair';
+            showNotification('Haz clic para iniciar, arrastra y vuelve a hacer clic');
+            map.on('click', onMapClickForDrawing);
+            map.on('mousemove', onMapMouseMoveForDrawing);
+        }
+        
+        function onMapClickForDrawing(e) {
+            if (!isDrawingMode) return;
+            if (!startPoint) {
+                startPoint = e.latlng;
+                showNotification('Ahora arrastra hasta el punto final');
+            } else {
+                const endPoint = e.latlng;
+                const bounds = L.latLngBounds(startPoint, endPoint);
+                if (rectangleDrawing) map.removeLayer(rectangleDrawing);
+                currentRectangle = L.rectangle(bounds, { color: '#10b981', weight: 3, fillOpacity: 0.2 }).addTo(map);
+                const minZoom = parseInt(document.getElementById('minZoom').value);
+                const maxZoom = parseInt(document.getElementById('maxZoom').value);
+                document.getElementById('progressContainer').style.display = 'block';
+                const progressFill = document.getElementById('progressFill');
+                const progressText = document.getElementById('progressText');
+                downloadTilesInArea(bounds, minZoom, maxZoom, (percent, downloaded, totalTiles) => {
+                    progressFill.style.width = `${percent}%`;
+                    progressText.innerHTML = `Descargando ${downloaded} de ${totalTiles}`;
+                }).then(total => {
+                    document.getElementById('progressContainer').style.display = 'none';
+                    showNotification(`¡${total} tiles guardados!`);
+                    document.getElementById('areaModal').style.display = 'none';
+                });
+                cleanDrawingMode();
+            }
+        }
+        
+        function onMapMouseMoveForDrawing(e) {
+            if (!isDrawingMode || !startPoint) return;
+            if (rectangleDrawing) map.removeLayer(rectangleDrawing);
+            const bounds = L.latLngBounds(startPoint, e.latlng);
+            rectangleDrawing = L.rectangle(bounds, { color: '#facc15', weight: 2, fillOpacity: 0.1, dashArray: '5,5' }).addTo(map);
+        }
+        
+        function cleanDrawingMode() {
+            isDrawingMode = false;
+            startPoint = null;
+            document.getElementById('map').style.cursor = '';
+            map.off('click', onMapClickForDrawing);
+            map.off('mousemove', onMapMouseMoveForDrawing);
+            if (rectangleDrawing) { map.removeLayer(rectangleDrawing); rectangleDrawing = null; }
+        }
+        
+        function openPoleModal(pole = null) {
+            const modal = document.getElementById('poleModal');
+            const form = document.getElementById('poleForm');
+            form.reset();
+            if(pole) {
+                document.getElementById('modalTitle').innerText = '✏️ Editar Poste';
+                document.getElementById('poleId').value = pole.id;
+                document.getElementById('numeroApoyo').value = pole.numeroApoyo;
+                document.getElementById('codigoApoyo').value = pole.codigoApoyo;
+                document.getElementById('condicion').value = pole.condicion;
+                document.getElementById('material').value = pole.material;
+                document.getElementById('longitudPoste').value = pole.longitudPoste;
+                document.getElementById('resistenciaMecanica').value = pole.resistenciaMecanica;
+                document.getElementById('estadoPoste').value = pole.estadoPoste;
+                document.getElementById('retenidas').value = pole.retenidas;
+                document.getElementById('propiedad').value = pole.propiedad;
+                document.getElementById('nivelTension').value = pole.nivelTension;
+                document.getElementById('alturaDisponible').value = pole.alturaDisponible;
+                document.getElementById('alturaMontaje').value = pole.alturaMontaje;
+                document.getElementById('trs').value = pole.trs;
+                document.getElementById('cableSobreBT').value = pole.cableSobreBT;
+                document.getElementById('requiereRetenidas').value = pole.requiereRetenidas;
+                document.getElementById('cablesOperador').value = pole.cablesOperador;
+                document.getElementById('totalCablesComunicacion').value = pole.totalCablesComunicacion;
+                document.getElementById('tipoCableRedEH').value = pole.tipoCableRedEH;
+                document.getElementById('tipoCableComunicacion').value = pole.tipoCableComunicacion;
+                document.getElementById('condicionCable').value = pole.condicionCable;
+                document.getElementById('amplificador').value = pole.amplificador;
+                document.getElementById('fuente').value = pole.fuente;
+                document.getElementById('distribuidorFibra').value = pole.distribuidorFibra;
+                document.getElementById('consumeEnergiaEH').value = pole.consumeEnergiaEH;
+                document.getElementById('otros').value = pole.otros || '';
+                document.getElementById('codigoPlacaEquipo').value = pole.codigoPlacaEquipo;
+                document.getElementById('direccionObservaciones').value = pole.direccionObservaciones;
+                currentLatLngForNew = { lat: pole.lat, lng: pole.lng };
+            } else {
+                document.getElementById('modalTitle').innerText = '➕ Nuevo Poste';
+                document.getElementById('poleId').value = '';
+                if(!currentLatLngForNew) { showNotification('Haz click en el mapa primero', true); modal.style.display = 'none'; return; }
+            }
+            modal.style.display = 'flex';
+        }
+        
+        function renderProjectList() {
+            const container = document.getElementById('projectListContainer');
+            if(!container) return;
+            container.innerHTML = '';
+            if(projects.length === 0) {
+                container.innerHTML = '<div style="color:#94a3b8; text-align:center; padding:1rem;">No hay proyectos</div>';
+                return;
+            }
+            projects.forEach(proj => {
+                const div = document.createElement('div');
+                div.className = `project-item ${currentProject?.id === proj.id ? 'active' : ''}`;
+                div.innerHTML = `<span class="project-name">📁 ${proj.nombre}<br><small>${proj.poles?.length || 0} postes</small></span>
+                    <div class="project-actions"><button data-edit="true" data-id="${proj.id}">✏️</button><button data-del="true" data-id="${proj.id}">❌</button></div>`;
+                div.addEventListener('click', (e) => {
+                    if(e.target.tagName === 'BUTTON') return;
+                    currentProject = proj;
+                    renderMarkers();
+                    renderProjectList();
+                    document.getElementById('poleDetailsPanel').innerHTML = '<div class="empty-state">Selecciona un poste</div>';
+                    selectedMarkerId = null;
+                    showNotification(`Proyecto: ${proj.nombre}`);
+                });
+                container.appendChild(div);
+            });
+            document.querySelectorAll('[data-edit="true"]').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const id = btn.getAttribute('data-id');
+                    const newName = prompt('Nuevo nombre:');
+                    if(newName && newName.trim()) {
+                        const proj = projects.find(p => p.id === id);
+                        if(proj) { proj.nombre = newName.trim(); await saveProjectsToDB(); renderProjectList(); showNotification('Nombre actualizado'); }
+                    }
+                });
+            });
+            document.querySelectorAll('[data-del="true"]').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if(confirm('¿Eliminar proyecto?')) {
+                        const id = btn.getAttribute('data-id');
+                        projects = projects.filter(p => p.id !== id);
+                        if(currentProject?.id === id) { currentProject = null; markersLayer?.clearLayers(); document.getElementById('poleDetailsPanel').innerHTML = '<div class="empty-state">Sin proyecto</div>'; }
+                        await saveProjectsToDB(); renderProjectList(); showNotification('Proyecto eliminado');
+                    }
+                });
+            });
+        }
+        
+        function initMap() {
+            map = L.map('map').setView([4.7110, -74.0721], 13);
+            cachedTileLayer.addTo(map);
+            cachedSatellite.addTo(map);
+            L.control.layers({ "Callejero": cachedTileLayer, "Satélite": cachedSatellite }).addTo(map);
+            map.on('click', (e) => {
+                if (isDrawingMode) return;
+                currentLatLngForNew = e.latlng;
+                if(confirm('📍 ¿Agregar nuevo poste aquí?')) {
+                    if(!currentProject) { showNotification('Crea un proyecto primero', true); return; }
+                    openPoleModal(null);
+                }
+            });
+            map.on('mousemove', (e) => { document.getElementById('coordInfo').innerHTML = `📌 Lat: ${e.latlng.lat.toFixed(6)}, Lng: ${e.latlng.lng.toFixed(6)}`; });
+            markersLayer = L.layerGroup().addTo(map);
+        }
+        
+        // Eventos
+        document.getElementById('newProjectBtn').onclick = async () => {
+            const name = prompt('Nombre del proyecto:');
+            if(name && name.trim()) {
+                projects.push({ id: crypto.randomUUID(), nombre: name.trim(), fechaCreacion: new Date().toISOString(), poles: [] });
+                currentProject = projects[projects.length-1];
+                await saveProjectsToDB();
+                renderProjectList();
+                renderMarkers();
+                showNotification(`Proyecto creado`);
+            }
+        };
+        document.getElementById('selectAreaBtn').onclick = () => document.getElementById('areaModal').style.display = 'flex';
+        document.getElementById('startAreaSelection').onclick = () => { document.getElementById('areaModal').style.display = 'none'; startDrawingMode(); };
+        document.getElementById('clearAreaBtn').onclick = async () => { if(confirm('¿Limpiar caché?')) { await localforage.clear(); if(currentRectangle) map.removeLayer(currentRectangle); showNotification('Caché limpiado'); } };
+        document.getElementById('exportExcelBtn').onclick = () => {
+            if(!currentProject?.poles?.length) { showNotification('No hay postes', true); return; }
+            const headers = ["NÚMERO DE APOYO","CÓDIGO DEL APOYO","CONDICIÓN","Material","Longitud","Resistencia","Estado","Retenidas","PROPIEDAD","TENSIÓN","ALTURA DISP","ALTURA MONTAJE","T/R/S","CABLE BT","RETENIDAS CABLE","CABLES OPERADOR","TOTAL CABLES","VANO","LONG VANO","TIPO CABLE EH","TIPO CABLE COM","CONDICIÓN CABLE","AMPLIFICADOR","FUENTE","DISTRIBUIDOR","CONSUME EH","OTROS","PLACA","DIRECCIÓN","LAT","LNG"];
+            const wsData = [headers];
+            currentProject.poles.forEach(p => wsData.push([p.numeroApoyo, p.codigoApoyo, p.condicion, p.material, p.longitudPoste, p.resistenciaMecanica, p.estadoPoste, p.retenidas, p.propiedad, p.nivelTension, p.alturaDisponible, p.alturaMontaje, p.trs, p.cableSobreBT, p.requiereRetenidas, p.cablesOperador, p.totalCablesComunicacion, p.vano, p.longitudVano, p.tipoCableRedEH, p.tipoCableComunicacion, p.condicionCable, p.amplificador, p.fuente, p.distribuidorFibra, p.consumeEnergiaEH, p.otros, p.codigoPlacaEquipo, p.direccionObservaciones, p.lat, p.lng]));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), `Postes`);
+            XLSX.writeFile(wb, `Postes_${currentProject.nombre}.xlsx`);
+            showNotification('Excel exportado');
+        };
+        document.getElementById('exportKmzBtn').onclick = async () => {
+            if(!currentProject?.poles?.length) { showNotification('No hay postes', true); return; }
+            const zip = new JSZip();
+            let kml = `<?xml version="1.0"?><kml><Document><name>${currentProject.nombre}</name>`;
+            currentProject.poles.forEach(p => { kml += `<Placemark><name>${p.codigoApoyo}</name><description>${JSON.stringify(p)}</description><Point><coordinates>${p.lng},${p.lat},0</coordinates></Point></Placemark>`; });
+            kml += `</Document></kml>`;
+            zip.file("doc.kml", kml);
+            const content = await zip.generateAsync({ type: "blob" });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = `${currentProject.nombre}.kmz`;
+            link.click();
+            showNotification('KMZ generado');
+        };
+        document.getElementById('newPoleGlobalBtn').onclick = () => { if(!currentProject) showNotification('Crea un proyecto', true); else showNotification('Haz click en el mapa'); };
+        document.getElementById('myLocationBtn').onclick = () => navigator.geolocation.getCurrentPosition(pos => map.setView([pos.coords.latitude, pos.coords.longitude], 18), () => showNotification('Error', true));
+        document.getElementById('closeAreaModal').onclick = () => document.getElementById('areaModal').style.display = 'none';
+        document.getElementById('closeModalBtn').onclick = () => document.getElementById('poleModal').style.display = 'none';
+        
+        document.getElementById('poleForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if(!currentProject) return;
+            const id = document.getElementById('poleId').value;
+            const codigo = document.getElementById('codigoApoyo').value.trim();
+            if(currentProject.poles.some(p => p.codigoApoyo === codigo && p.id !== id)) { showNotification('Código duplicado', true); return; }
+            const newPole = {
+                id: id || crypto.randomUUID(),
+                numeroApoyo: document.getElementById('numeroApoyo').value,
+                codigoApoyo: codigo,
+                condicion: document.getElementById('condicion').value,
+                material: document.getElementById('material').value,
+                longitudPoste: parseFloat(document.getElementById('longitudPoste').value),
+                resistenciaMecanica: parseFloat(document.getElementById('resistenciaMecanica').value),
+                estadoPoste: document.getElementById('estadoPoste').value,
+                retenidas: document.getElementById('retenidas').value,
+                propiedad: document.getElementById('propiedad').value,
+                nivelTension: document.getElementById('nivelTension').value,
+                alturaDisponible: parseFloat(document.getElementById('alturaDisponible').value),
+                alturaMontaje: parseFloat(document.getElementById('alturaMontaje').value),
+                trs: document.getElementById('trs').value,
+                cableSobreBT: document.getElementById('cableSobreBT').value,
+                requiereRetenidas: document.getElementById('requiereRetenidas').value,
+                cablesOperador: document.getElementById('cablesOperador').value,
+                totalCablesComunicacion: parseInt(document.getElementById('totalCablesComunicacion').value),
+                tipoCableRedEH: document.getElementById('tipoCableRedEH').value,
+                tipoCableComunicacion: document.getElementById('tipoCableComunicacion').value,
+                condicionCable: document.getElementById('condicionCable').value,
+                amplificador: document.getElementById('amplificador').value,
+                fuente: document.getElementById('fuente').value,
+                distribuidorFibra: document.getElementById('distribuidorFibra').value,
+                consumeEnergiaEH: document.getElementById('consumeEnergiaEH').value,
+                otros: document.getElementById('otros').value,
+                codigoPlacaEquipo: document.getElementById('codigoPlacaEquipo').value,
+                direccionObservaciones: document.getElementById('direccionObservaciones').value,
+                lat: currentLatLngForNew.lat, lng: currentLatLngForNew.lng,
+                order: currentProject.poles.length + 1, vano: null, longitudVano: null
+            };
+            if(id) { const idx = currentProject.poles.findIndex(p => p.id === id); if(idx !== -1) Object.assign(currentProject.poles[idx], newPole); }
+            else currentProject.poles.push(newPole);
+            renumberOrder(currentProject);
+            await saveProjectsToDB();
+            renderMarkers();
+            document.getElementById('poleModal').style.display = 'none';
+            showNotification(`Poste ${codigo} guardado`);
+            renderProjectList();
+        });
+        
+        (async () => {
+            await initDB();
+            const stored = await loadProjectsFromDB();
+            projects = stored.length ? stored : [];
+            initMap();
+            if(projects.length) currentProject = projects[0];
+            renderProjectList();
+            if(currentProject) renderMarkers();
+            updateOnlineStatus();
+            showNotification('✅ Sistema listo - Pestañas laterales visibles');
+        })();
+    })();
+</script>
+</body>
+</html>
