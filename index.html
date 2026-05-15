@@ -2,19 +2,22 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Gestor de Postes | GIS para FTTH</title>
-    <!-- Leaflet CSS/JS -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#1e2a3e">
+    <meta name="description" content="Aplicación GIS para levantamiento de postes en proyectos de fibra óptica">
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="/postes/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Gestor de Postes">
+    <link rel="apple-touch-icon" href="https://raw.githubusercontent.com/Daniel-Monca/postes/main/icon-192.png">
+    
+    <title>Gestor de Postes</title>
+    
+    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- SheetJS (XLSX) -->
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-    <!-- JSZip para KMZ -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <!-- Turf.js -->
-    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-    <!-- localforage -->
-    <script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
+    
     <style>
         * {
             margin: 0;
@@ -30,7 +33,6 @@
             background: #1a1a2e;
         }
 
-        /* Layout principal */
         .app-container {
             display: flex;
             height: 100%;
@@ -80,7 +82,7 @@
             transform: translateX(0);
         }
 
-        /* PESTAÑAS VISIBLES EN LOS BORDES - CON Z-INDEX MUY ALTO */
+        /* PESTAÑAS VISIBLES EN LOS BORDES */
         .tab-left {
             position: fixed;
             left: 0;
@@ -103,7 +105,6 @@
             transition: all 0.2s;
             gap: 5px;
             font-weight: bold;
-            backdrop-filter: blur(5px);
         }
 
         .tab-left:hover {
@@ -134,7 +135,6 @@
             transition: all 0.2s;
             gap: 5px;
             font-weight: bold;
-            backdrop-filter: blur(5px);
         }
 
         .tab-right:hover {
@@ -143,9 +143,8 @@
             width: 55px;
         }
 
-        /* Header del panel */
         .panel-header {
-            padding: 1.2rem;
+            padding: 1rem;
             background: #0f172a;
             border-bottom: 1px solid #334155;
             display: flex;
@@ -154,8 +153,7 @@
         }
 
         .panel-header h2 {
-            font-size: 1.1rem;
-            font-weight: 600;
+            font-size: 1rem;
             color: #facc15;
         }
 
@@ -163,7 +161,7 @@
             background: none;
             border: none;
             color: #94a3b8;
-            font-size: 1.3rem;
+            font-size: 1.2rem;
             cursor: pointer;
         }
 
@@ -171,7 +169,6 @@
             color: white;
         }
 
-        /* Contenido del panel izquierdo */
         .panel-content {
             flex: 1;
             overflow-y: auto;
@@ -250,7 +247,7 @@
 
         .btn-primary, .btn-success, .btn-warning, .btn-secondary {
             border: none;
-            padding: 10px 12px;
+            padding: 10px;
             border-radius: 8px;
             font-weight: 600;
             width: 100%;
@@ -286,39 +283,12 @@
             margin: 1rem 0;
         }
 
-        /* Panel derecho - detalles del poste */
-        .right-panel-content {
-            padding: 1rem;
-        }
-
-        .pole-detail {
-            background: #f8fafc;
-            border-radius: 12px;
-            padding: 1rem;
-            font-size: 0.75rem;
-        }
-
-        .pole-detail p {
-            margin: 6px 0;
-            line-height: 1.4;
-        }
-
-        .empty-state {
-            text-align: center;
-            color: #64748b;
-            padding: 2rem;
-            font-size: 0.85rem;
-        }
-
-        /* Mapa - z-index bajo para que las pestañas estén encima */
         .map-container {
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            width: 100%;
-            height: 100%;
             z-index: 1;
         }
 
@@ -327,12 +297,26 @@
             width: 100%;
         }
 
-        /* Modales */
+        .coords-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 8px;
+            font-size: 11px;
+            z-index: 50;
+            font-family: monospace;
+        }
+
         .modal {
             display: none;
             position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             background: rgba(0,0,0,0.6);
             z-index: 2000;
             justify-content: center;
@@ -342,12 +326,11 @@
         .modal-content {
             background: white;
             border-radius: 24px;
-            max-width: 750px;
-            width: 90%;
+            max-width: 90%;
+            width: 450px;
             max-height: 85vh;
             overflow-y: auto;
             padding: 1.5rem;
-            z-index: 2001;
         }
 
         .form-group {
@@ -371,9 +354,9 @@
         }
 
         .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
         }
 
         .notification {
@@ -396,17 +379,23 @@
             to { opacity: 1; transform: translateX(-50%) translateY(0);}
         }
 
-        .coords-info {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.7);
-            color: white;
-            padding: 5px 10px;
-            border-radius: 8px;
-            font-size: 11px;
-            z-index: 50;
-            font-family: monospace;
+        .empty-state {
+            text-align: center;
+            color: #64748b;
+            padding: 2rem;
+            font-size: 0.85rem;
+        }
+
+        .pole-detail {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 1rem;
+            font-size: 0.75rem;
+        }
+
+        .pole-detail p {
+            margin: 6px 0;
+            line-height: 1.4;
         }
 
         .progress-bar {
@@ -424,31 +413,23 @@
             transition: width 0.3s;
             width: 0%;
         }
-
-        .drawing-active {
-            cursor: crosshair !important;
-        }
     </style>
 </head>
 <body>
 <div class="app-container">
-    <!-- Mapa (fondo) -->
     <div class="map-container">
         <div id="map"></div>
         <div id="coordInfo" class="coords-info">📌 Lat: --, Lng: --</div>
     </div>
 
-    <!-- PESTAÑA VISIBLE IZQUIERDA (siempre encima) -->
     <button class="tab-left" id="tabLeftBtn">
         📋<br>MENÚ
     </button>
 
-    <!-- PESTAÑA VISIBLE DERECHA (siempre encima) -->
     <button class="tab-right" id="tabRightBtn">
         📌<br>POSTE
     </button>
 
-    <!-- Panel Izquierdo - Proyectos y Exportaciones -->
     <div class="left-panel" id="leftPanel">
         <div class="panel-header">
             <h2>📁 GESTOR DE POSTES</h2>
@@ -485,13 +466,12 @@
         </div>
     </div>
 
-    <!-- Panel Derecho - Detalles del Poste -->
     <div class="right-panel" id="rightPanel">
         <div class="panel-header">
             <h2>📌 DETALLES DEL POSTE</h2>
             <button class="close-panel" id="closeRightPanel">✕</button>
         </div>
-        <div class="right-panel-content">
+        <div class="panel-content">
             <div id="poleDetailsPanel" class="empty-state">Selecciona un poste en el mapa</div>
         </div>
     </div>
@@ -527,55 +507,31 @@
         <h2 id="modalTitle" style="margin-bottom:1rem;">Nuevo Poste</h2>
         <form id="poleForm">
             <input type="hidden" id="poleId" />
-            <div class="form-row">
-                <div class="form-group"><label>NÚMERO DE APOYO *</label><input type="text" id="numeroApoyo" required /></div>
-                <div class="form-group"><label>CÓDIGO DEL APOYO *</label><input type="text" id="codigoApoyo" required /></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>CONDICIÓN</label><select id="condicion"><option value="E">E-ENCONTRADO</option><option value="I">I-INSTALADO</option><option value="R">R-RETIRADO</option><option value="C">C-CAMBIO</option></select></div>
-                <div class="form-group"><label>Material</label><select id="material"><option value="CO">CO-CONCRETO</option><option value="MA">MA-MADERA</option><option value="TO">TO-TORRE</option><option value="TU">TU-TUBO</option></select></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Longitud (m)</label><input type="number" id="longitudPoste" required /></div>
-                <div class="form-group"><label>Resistencia (Kg)</label><input type="number" id="resistenciaMecanica" required /></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Estado</label><select id="estadoPoste"><option value="B">B-BUENO</option><option value="M">M-MALO</option></select></div>
-                <div class="form-group"><label>Retenidas</label><input type="text" id="retenidas" /></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Propiedad</label><select id="propiedad"><option value="EH">EH-Electrohuila</option><option value="GO">GO-Gobernación</option><option value="MC">MC-Municipio</option><option value="P">P-Particular</option></select></div>
-                <div class="form-group"><label>Nivel Tensión</label><input type="text" id="nivelTension" /></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Altura Disponible</label><input type="number" id="alturaDisponible" /></div>
-                <div class="form-group"><label>Altura Montaje</label><input type="number" id="alturaMontaje" /></div>
-            </div>
+            <div class="form-group"><label>NÚMERO DE APOYO *</label><input type="text" id="numeroApoyo" required /></div>
+            <div class="form-group"><label>CÓDIGO DEL APOYO *</label><input type="text" id="codigoApoyo" required /></div>
+            <div class="form-group"><label>CONDICIÓN</label><select id="condicion"><option value="E">E-ENCONTRADO</option><option value="I">I-INSTALADO</option><option value="R">R-RETIRADO</option><option value="C">C-CAMBIO</option></select></div>
+            <div class="form-group"><label>Material</label><select id="material"><option value="CO">CO-CONCRETO</option><option value="MA">MA-MADERA</option><option value="TO">TO-TORRE</option><option value="TU">TU-TUBO</option></select></div>
+            <div class="form-group"><label>Longitud (m)</label><input type="number" id="longitudPoste" required /></div>
+            <div class="form-group"><label>Resistencia (Kg)</label><input type="number" id="resistenciaMecanica" required /></div>
+            <div class="form-group"><label>Estado</label><select id="estadoPoste"><option value="B">B-BUENO</option><option value="M">M-MALO</option></select></div>
+            <div class="form-group"><label>Retenidas</label><input type="text" id="retenidas" /></div>
+            <div class="form-group"><label>Propiedad</label><select id="propiedad"><option value="EH">EH-Electrohuila</option><option value="GO">GO-Gobernación</option><option value="MC">MC-Municipio</option><option value="P">P-Particular</option></select></div>
+            <div class="form-group"><label>Nivel Tensión</label><input type="text" id="nivelTension" /></div>
+            <div class="form-group"><label>Altura Disponible</label><input type="number" id="alturaDisponible" /></div>
+            <div class="form-group"><label>Altura Montaje</label><input type="number" id="alturaMontaje" /></div>
             <div class="form-group"><label>T/R/S</label><select id="trs"><option value="T">T-Terminal</option><option value="R">R-Retención</option><option value="S">S-Suspensión</option></select></div>
-            <div class="form-row">
-                <div class="form-group"><label>Cable sobre BT</label><select id="cableSobreBT"><option value="SI">SI</option><option value="NO">NO</option></select></div>
-                <div class="form-group"><label>Requiere retenidas</label><select id="requiereRetenidas"><option value="SI">SI</option><option value="NO">NO</option></select></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Cables operador</label><select id="cablesOperador"><option value="E">E-Existente</option><option value="P">P-Proyectado</option></select></div>
-                <div class="form-group"><label>Total cables</label><input type="number" id="totalCablesComunicacion" /></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Tipo cable EH</label><select id="tipoCableRedEH"><option value="ACSR">ACSR</option><option value="ASC">ASC</option><option value="TRE">TRE</option><option value="CUA">CUA</option><option value="CUD">CUD</option></select></div>
-                <div class="form-group"><label>Tipo cable Com</label><select id="tipoCableComunicacion"><option value="RG6">RG6</option><option value="RG11">RG11</option><option value=".500">.500</option><option value="FO">FO</option></select></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Condición cable</label><select id="condicionCable"><option value="E">E-ENCONTRADO</option><option value="I">I-INSTALADO</option><option value="R">R-RETIRADO</option><option value="C">C-CAMBIO</option></select></div>
-                <div class="form-group"><label>Amplificador</label><input type="number" id="amplificador" /></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Fuente</label><input type="number" id="fuente" /></div>
-                <div class="form-group"><label>Distribuidor Fibra</label><input type="number" id="distribuidorFibra" /></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Consume energía EH</label><select id="consumeEnergiaEH"><option value="SI">SI</option><option value="NO">NO</option></select></div>
-                <div class="form-group"><label>Otros</label><input type="text" id="otros" /></div>
-            </div>
+            <div class="form-group"><label>Cable sobre BT</label><select id="cableSobreBT"><option value="SI">SI</option><option value="NO">NO</option></select></div>
+            <div class="form-group"><label>Requiere retenidas</label><select id="requiereRetenidas"><option value="SI">SI</option><option value="NO">NO</option></select></div>
+            <div class="form-group"><label>Cables operador</label><select id="cablesOperador"><option value="E">E-Existente</option><option value="P">P-Proyectado</option></select></div>
+            <div class="form-group"><label>Total cables</label><input type="number" id="totalCablesComunicacion" /></div>
+            <div class="form-group"><label>Tipo cable EH</label><select id="tipoCableRedEH"><option value="ACSR">ACSR</option><option value="ASC">ASC</option><option value="TRE">TRE</option><option value="CUA">CUA</option><option value="CUD">CUD</option></select></div>
+            <div class="form-group"><label>Tipo cable Com</label><select id="tipoCableComunicacion"><option value="RG6">RG6</option><option value="RG11">RG11</option><option value=".500">.500</option><option value="FO">FO</option></select></div>
+            <div class="form-group"><label>Condición cable</label><select id="condicionCable"><option value="E">E-ENCONTRADO</option><option value="I">I-INSTALADO</option><option value="R">R-RETIRADO</option><option value="C">C-CAMBIO</option></select></div>
+            <div class="form-group"><label>Amplificador</label><input type="number" id="amplificador" /></div>
+            <div class="form-group"><label>Fuente</label><input type="number" id="fuente" /></div>
+            <div class="form-group"><label>Distribuidor Fibra</label><input type="number" id="distribuidorFibra" /></div>
+            <div class="form-group"><label>Consume energía EH</label><select id="consumeEnergiaEH"><option value="SI">SI</option><option value="NO">NO</option></select></div>
+            <div class="form-group"><label>Otros</label><input type="text" id="otros" /></div>
             <div class="form-group"><label>Código/Placa equipo</label><input type="text" id="codigoPlacaEquipo" /></div>
             <div class="form-group"><label>Dirección/Observaciones</label><textarea id="direccionObservaciones" rows="2"></textarea></div>
             <input type="hidden" id="lat" /><input type="hidden" id="lng" />
@@ -586,6 +542,12 @@
         </form>
     </div>
 </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
 
 <script>
     // ==================== APLICACIÓN COMPLETA ====================
@@ -608,11 +570,9 @@
         const tabLeftBtn = document.getElementById('tabLeftBtn');
         const tabRightBtn = document.getElementById('tabRightBtn');
         
-        // Abrir/cerrar con las pestañas laterales
         tabLeftBtn.onclick = () => leftPanel.classList.toggle('open');
         tabRightBtn.onclick = () => rightPanel.classList.toggle('open');
         
-        // Botones de cierre dentro de los paneles
         document.getElementById('closeLeftPanel').onclick = () => leftPanel.classList.remove('open');
         document.getElementById('closeRightPanel').onclick = () => rightPanel.classList.remove('open');
         
@@ -1076,8 +1036,11 @@
                 otros: document.getElementById('otros').value,
                 codigoPlacaEquipo: document.getElementById('codigoPlacaEquipo').value,
                 direccionObservaciones: document.getElementById('direccionObservaciones').value,
-                lat: currentLatLngForNew.lat, lng: currentLatLngForNew.lng,
-                order: currentProject.poles.length + 1, vano: null, longitudVano: null
+                lat: currentLatLngForNew.lat,
+                lng: currentLatLngForNew.lng,
+                order: currentProject.poles.length + 1,
+                vano: null,
+                longitudVano: null
             };
             if(id) { const idx = currentProject.poles.findIndex(p => p.id === id); if(idx !== -1) Object.assign(currentProject.poles[idx], newPole); }
             else currentProject.poles.push(newPole);
@@ -1098,9 +1061,24 @@
             renderProjectList();
             if(currentProject) renderMarkers();
             updateOnlineStatus();
-            showNotification('✅ Sistema listo - Pestañas laterales visibles');
+            showNotification('✅ Sistema listo');
         })();
     })();
+</script>
+
+<!-- Registro del Service Worker para PWA -->
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/postes/sw.js')
+                .then(registration => {
+                    console.log('Service Worker registrado correctamente:', registration);
+                })
+                .catch(error => {
+                    console.log('Error al registrar Service Worker:', error);
+                });
+        });
+    }
 </script>
 </body>
 </html>
